@@ -1,0 +1,28 @@
+# 你的环境非常棒，我们保持这个版本
+torch==2.5.1
+torchvision>=0.20.0
+
+# 基础工具
+numpy
+pandas
+matplotlib
+opencv-python
+scipy
+
+# 进度条和工具
+tqdm
+pyyaml
+requests
+psutil
+seaborn
+
+# 我们把 ultralytics 放在本地，所以这里不需要写 ultralytics
+# 只需要安装它依赖的包
+thop>=0.1.1
+
+# ultralytics 依赖 (本地ultralytics代码已包含)
+pillow
+py-cpuinfo
+
+# 可选: 加速数据加载
+# albumentations

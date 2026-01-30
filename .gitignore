@@ -1,0 +1,40 @@
+# === Git忽略配置 ===
+
+# Python缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# 数据集 (太大，单独上传)
+datasets/
+
+# 数据集分析
+dataset_analysis/
+
+# 训练结果
+runs/
+experiments/
+
+# 模型权重
+*.pt
+weights/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+
+# 日志
+*.log
+train_log.txt
+
+# 系统文件
+.DS_Store
+Thumbs.db
