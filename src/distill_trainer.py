@@ -151,6 +151,10 @@ class DistillSegmentationTrainer(SegmentationTrainer):
                         distill_loss = self._compute_distill_loss(batch)
                         # 组合损失: (1-alpha)*hard_loss + alpha*distill_loss
                         self.loss = (1 - self.alpha) * hard_loss.sum() + self.alpha * distill_loss
+                        
+                        # 调试输出（每个epoch第一个batch）
+                        if i == 0:
+                            LOGGER.info(f"[Distill Debug] Epoch {epoch+1}: hard_loss={hard_loss.sum().item():.4f}, distill_loss={distill_loss.item() if hasattr(distill_loss, 'item') else distill_loss:.4f}, total_loss={self.loss.item():.4f}")
                     else:
                         self.loss = hard_loss.sum()
                     

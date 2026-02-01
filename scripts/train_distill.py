@@ -144,6 +144,23 @@ def train_distill(args):
         "flops_G": round(flops_g, 1),
     }
     
+    # 添加各类别AP
+    class_names = ["apple", "banana", "citrus", "grape", "kiwi", "strawberry"]
+    per_class_metrics = {}
+    try:
+        # 从validator获取各类别AP
+        if hasattr(trainer, 'validator') and trainer.validator is not None:
+            ap50 = trainer.validator.metrics.box.ap50
+            ap = trainer.validator.metrics.box.ap
+            for i, name in enumerate(class_names):
+                if i < len(ap50):
+                    per_class_metrics[f"{name}_AP50"] = round(float(ap50[i]), 4)
+                    per_class_metrics[f"{name}_AP50-95"] = round(float(ap[i]), 4)
+    except Exception as e:
+        print(f"获取各类别AP失败: {e}")
+    
+    metrics["per_class"] = per_class_metrics
+    
     with open(exp_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2, ensure_ascii=False)
     
@@ -153,6 +170,11 @@ def train_distill(args):
     print(f"检测指标:")
     print(f"  mAP50:     {metrics['box_mAP50']:.4f}")
     print(f"  mAP50-95:  {metrics['box_mAP50-95']:.4f}")
+    print(f"各类别AP50-95:")
+    for name in class_names:
+        key = f"{name}_AP50-95"
+        if key in per_class_metrics:
+            print(f"  {name:12s}: {per_class_metrics[key]:.4f}")
     print(f"{'='*60}\n")
     
     return metrics

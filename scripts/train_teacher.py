@@ -110,6 +110,21 @@ def train_teacher(args):
         "best_weights": str(best_weights),
     }
     
+    # 添加各类别AP
+    class_names = ["apple", "banana", "citrus", "grape", "kiwi", "strawberry"]
+    per_class_metrics = {}
+    try:
+        val_results = model.val(data=str(ROOT / "configs/data.yaml"), verbose=False)
+        if hasattr(val_results, 'box') and val_results.box.ap50 is not None:
+            for i, name in enumerate(class_names):
+                if i < len(val_results.box.ap50):
+                    per_class_metrics[f"{name}_AP50"] = round(float(val_results.box.ap50[i]), 4)
+                    per_class_metrics[f"{name}_AP50-95"] = round(float(val_results.box.ap[i]), 4)
+    except Exception as e:
+        print(f"获取各类别AP失败: {e}")
+    
+    metrics["per_class"] = per_class_metrics
+    
     # 保存指标
     with open(exp_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2, ensure_ascii=False)
@@ -132,6 +147,11 @@ def train_teacher(args):
     print(f"  mAP50-95:  {metrics['box_mAP50-95']:.4f}")
     print(f"  Precision: {metrics['precision']:.4f}")
     print(f"  Recall:    {metrics['recall']:.4f}")
+    print(f"各类别AP50-95:")
+    for name in class_names:
+        key = f"{name}_AP50-95"
+        if key in per_class_metrics:
+            print(f"  {name:12s}: {per_class_metrics[key]:.4f}")
     print(f"\n最佳权重: {best_weights}")
     print(f"{'='*60}\n")
     
