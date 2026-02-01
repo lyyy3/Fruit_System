@@ -1,6 +1,8 @@
 """
 知识蒸馏训练入口
-用法: python scripts/train_distill.py --student eca --teacher weights/teacher_best.pt --epochs 100
+用法: 
+  基础蒸馏: python scripts/train_distill.py --student eca --teacher weights/teacher_best.pt
+  继续蒸馏: python scripts/train_distill.py --student eca --resume experiments/xxx/train/weights/best.pt
 """
 import os
 import sys
@@ -29,7 +31,10 @@ DEFAULT_TEACHER = "weights/teacher_best.pt"
 def train_distill(args):
     """执行蒸馏训练"""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-    exp_name = f"{timestamp}_distill_{args.student}"
+    
+    # 实验名称标注是否为继续训练
+    suffix = "_finetune" if args.resume else ""
+    exp_name = f"{timestamp}_distill_{args.student}{suffix}"
     exp_dir = ROOT / "experiments" / exp_name
     exp_dir.mkdir(parents=True, exist_ok=True)
     
@@ -38,6 +43,7 @@ def train_distill(args):
     print(f"{'='*60}")
     print(f"实验名称: {exp_name}")
     print(f"学生模型: {args.student}")
+    print(f"继续训练: {args.resume or '否（从预训练开始）'}")
     print(f"教师模型: {args.teacher}")
     print(f"蒸馏权重 alpha: {args.alpha}")
     print(f"温度 T: {args.temperature}")
@@ -73,7 +79,7 @@ def train_distill(args):
         "project": str(exp_dir),
         "name": "train",
         "workers": 8,
-        "cache": True,  # 缓存数据到内存提升GPU利用率
+        "cache": True,
         "exist_ok": True,
         "patience": 20,
         "verbose": True,
@@ -86,8 +92,20 @@ def train_distill(args):
         temperature=args.temperature,
     )
     
-    # 如果是自定义配置，加载预训练权重
-    if not student_cfg.endswith(".pt"):
+    # 加载学生模型权重
+    if args.resume:
+        # 从已训练的模型继续蒸馏
+        resume_path = Path(args.resume)
+        if not resume_path.is_absolute():
+            resume_path = ROOT / args.resume
+        if resume_path.exists():
+            print(f"从已训练模型加载权重: {resume_path}")
+            trainer.model = YOLO(str(resume_path)).model
+        else:
+            print(f"警告: 指定的resume权重不存在 {resume_path}，使用预训练权重")
+            trainer.model = YOLO(model_path).load("yolo11n-seg.pt").model
+    elif not student_cfg.endswith(".pt"):
+        # 从预训练权重开始
         base_weights = "yolo11n-seg.pt"
         trainer.model = YOLO(model_path).load(base_weights).model
     
@@ -147,10 +165,12 @@ if __name__ == "__main__":
                         help="学生模型类型: baseline, eca")
     parser.add_argument("--teacher", type=str, default=DEFAULT_TEACHER,
                         help="教师模型权重路径")
-    parser.add_argument("--alpha", type=float, default=0.5,
-                        help="蒸馏损失权重 (0-1)")
-    parser.add_argument("--temperature", type=float, default=3.0,
-                        help="软标签温度")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="从已训练的模型继续蒸馏（权重路径）")
+    parser.add_argument("--alpha", type=float, default=0.3,
+                        help="蒸馏损失权重 (0-1)，默认0.3")
+    parser.add_argument("--temperature", type=float, default=4.0,
+                        help="软标签温度，默认4.0")
     parser.add_argument("--epochs", type=int, default=50,
                         help="训练轮数")
     parser.add_argument("--batch", type=int, default=32,

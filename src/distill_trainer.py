@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ultralytics.models.yolo.segment.train import SegmentationTrainer
-from ultralytics.utils import LOGGER, RANK
+from ultralytics.utils import LOGGER, RANK, DEFAULT_CFG
 from ultralytics.utils.torch_utils import autocast
 
 
@@ -30,7 +30,7 @@ class DistillSegmentationTrainer(SegmentationTrainer):
         temperature: 软标签温度，越高分布越平滑
     """
     
-    def __init__(self, cfg=None, overrides=None, _callbacks=None,
+    def __init__(self, cfg=DEFAULT_CFG, overrides=None, _callbacks=None,
                  teacher_weights=None, alpha=0.5, temperature=3.0):
         super().__init__(cfg, overrides, _callbacks)
         
