@@ -353,7 +353,8 @@ class DistillSegmentationTrainer(SegmentationTrainer):
             s_feat = F.normalize(s_feat, p=2, dim=1)
             t_feat = F.normalize(t_feat, p=2, dim=1)
             
-            loss = F.mse_loss(s_feat, t_feat)
+            # 缩放因子使蒸馏损失与硬标签损失量级相近
+            loss = F.mse_loss(s_feat, t_feat) * 1000
             return loss
             
         elif student_feat.dim() == 4 and teacher_feat.dim() == 4:
