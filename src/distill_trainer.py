@@ -283,33 +283,53 @@ class DistillSegmentationTrainer(SegmentationTrainer):
         distill_loss = 0.0
         T = self.temperature
         
-        # 提取有效的tensor输出
-        student_tensors = []
-        teacher_tensors = []
+        # 按维度分类提取tensor
+        student_3d = []  # [B, C, N] 检测头输出
+        student_4d = []  # [B, C, H, W] 特征图
+        teacher_3d = []
+        teacher_4d = []
         
         if isinstance(student_preds, (list, tuple)):
             for p in student_preds:
                 if isinstance(p, torch.Tensor):
-                    student_tensors.append(p)
+                    if p.dim() == 3:
+                        student_3d.append(p)
+                    elif p.dim() == 4:
+                        student_4d.append(p)
         elif isinstance(student_preds, torch.Tensor):
-            student_tensors.append(student_preds)
+            if student_preds.dim() == 3:
+                student_3d.append(student_preds)
+            elif student_preds.dim() == 4:
+                student_4d.append(student_preds)
             
         if isinstance(teacher_preds, (list, tuple)):
             for p in teacher_preds:
                 if isinstance(p, torch.Tensor):
-                    teacher_tensors.append(p)
+                    if p.dim() == 3:
+                        teacher_3d.append(p)
+                    elif p.dim() == 4:
+                        teacher_4d.append(p)
         elif isinstance(teacher_preds, torch.Tensor):
-            teacher_tensors.append(teacher_preds)
+            if teacher_preds.dim() == 3:
+                teacher_3d.append(teacher_preds)
+            elif teacher_preds.dim() == 4:
+                teacher_4d.append(teacher_preds)
         
-        # 对每对输出计算蒸馏损失
-        for s_feat, t_feat in zip(student_tensors, teacher_tensors):
-            loss = self._logit_distill_loss(s_feat, t_feat, T)
-            distill_loss += loss
-            
         # 调试输出
         if not hasattr(self, '_loss_debug_printed'):
             self._loss_debug_printed = True
-            LOGGER.info(f"[Distill Debug] Matched pairs: {min(len(student_tensors), len(teacher_tensors))}, distill_loss: {distill_loss}")
+            LOGGER.info(f"[Distill Debug] student_3d: {len(student_3d)}, student_4d: {len(student_4d)}")
+            LOGGER.info(f"[Distill Debug] teacher_3d: {len(teacher_3d)}, teacher_4d: {len(teacher_4d)}")
+        
+        # 对3D输出（检测头）进行蒸馏
+        for s_feat, t_feat in zip(student_3d, teacher_3d):
+            loss = self._logit_distill_loss(s_feat, t_feat, T)
+            distill_loss += loss
+        
+        # 对4D输出（特征图/分割）进行蒸馏  
+        for s_feat, t_feat in zip(student_4d, teacher_4d):
+            loss = self._logit_distill_loss(s_feat, t_feat, T)
+            distill_loss += loss
         
         return distill_loss
     
