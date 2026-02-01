@@ -248,7 +248,9 @@ class DistillSegmentationTrainer(SegmentationTrainer):
     def _compute_distill_loss(self, batch):
         """计算蒸馏损失
         
-        使用输出级蒸馏：对比学生和教师的预测结果
+        使用CWD(Channel-wise Knowledge Distillation)方法
+        论文: Channel-wise Knowledge Distillation for Dense Prediction
+        核心思想: 对每个通道的空间分布进行KL散度对齐
         """
         with torch.no_grad():
             # 教师模型预测（不需要梯度）
@@ -257,24 +259,67 @@ class DistillSegmentationTrainer(SegmentationTrainer):
         # 学生模型预测
         student_preds = self.model(batch["img"]) if not self.args.compile else self.model(batch["img"])
         
-        # 计算蒸馏损失
+        # 计算CWD蒸馏损失
         distill_loss = 0.0
+        T = self.temperature  # 温度参数
         
-        # 对每个尺度的输出计算KL散度
         if isinstance(student_preds, (list, tuple)) and isinstance(teacher_preds, (list, tuple)):
             for s_pred, t_pred in zip(student_preds, teacher_preds):
                 if isinstance(s_pred, torch.Tensor) and isinstance(t_pred, torch.Tensor):
-                    # 确保形状匹配
-                    if s_pred.shape == t_pred.shape:
-                        # 使用MSE损失进行特征对齐
-                        distill_loss += F.mse_loss(s_pred, t_pred)
-                    elif s_pred.shape[-2:] == t_pred.shape[-2:]:
-                        # 通道数不同时，使用1x1卷积适配（简化版：直接MSE）
-                        distill_loss += F.mse_loss(
-                            F.adaptive_avg_pool2d(s_pred, 1),
-                            F.adaptive_avg_pool2d(t_pred, 1)
-                        )
+                    # 使用CWD计算损失
+                    distill_loss += self._cwd_loss(s_pred, t_pred, T)
         elif isinstance(student_preds, torch.Tensor) and isinstance(teacher_preds, torch.Tensor):
-            distill_loss = F.mse_loss(student_preds, teacher_preds)
+            distill_loss = self._cwd_loss(student_preds, teacher_preds, T)
         
         return distill_loss
+    
+    def _cwd_loss(self, student_feat, teacher_feat, T=4.0):
+        """Channel-wise Knowledge Distillation Loss
+        
+        对每个通道计算空间分布的KL散度
+        
+        Args:
+            student_feat: 学生特征 [B, C_s, H, W]
+            teacher_feat: 教师特征 [B, C_t, H, W]
+            T: 温度参数
+        """
+        B = student_feat.shape[0]
+        
+        # 如果通道数不同，需要对齐
+        if student_feat.shape[1] != teacher_feat.shape[1]:
+            # 使用自适应平均池化对齐空间维度，然后用全局池化
+            s_feat = F.adaptive_avg_pool2d(student_feat, 1).view(B, -1)
+            t_feat = F.adaptive_avg_pool2d(teacher_feat, 1).view(B, -1)
+            # 对齐到相同维度
+            min_c = min(s_feat.shape[1], t_feat.shape[1])
+            s_feat = s_feat[:, :min_c]
+            t_feat = t_feat[:, :min_c]
+            
+            # 计算KL散度
+            s_dist = F.log_softmax(s_feat / T, dim=1)
+            t_dist = F.softmax(t_feat / T, dim=1)
+            return F.kl_div(s_dist, t_dist, reduction='batchmean') * (T ** 2)
+        
+        # 空间维度对齐
+        if student_feat.shape[-2:] != teacher_feat.shape[-2:]:
+            teacher_feat = F.interpolate(
+                teacher_feat, 
+                size=student_feat.shape[-2:], 
+                mode='bilinear', 
+                align_corners=False
+            )
+        
+        C = student_feat.shape[1]
+        
+        # 展平空间维度: [B, C, H*W]
+        s_flat = student_feat.view(B, C, -1)
+        t_flat = teacher_feat.view(B, C, -1)
+        
+        # 对每个通道计算空间分布的softmax
+        s_dist = F.log_softmax(s_flat / T, dim=2)
+        t_dist = F.softmax(t_flat / T, dim=2)
+        
+        # 计算KL散度
+        loss = F.kl_div(s_dist, t_dist, reduction='batchmean') * (T ** 2)
+        
+        return loss

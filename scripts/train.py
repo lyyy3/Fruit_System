@@ -19,9 +19,10 @@ from ultralytics import YOLO
 MODELS = {
     "baseline": "yolo11n-seg.pt",           # 学生baseline
     "eca": "models/yolo11n_eca.yaml",       # 学生+ECA
-    "teacher": "yolo11m-seg.pt",            # 教师baseline
+    "teacher": "yolo11m-seg.pt",            # 教师baseline (m)
     "teacher_eca": "models/yolo11m_eca.yaml", # 教师+ECA
     "teacher_enhanced": "models/yolo11m_enhanced.yaml",  # 增强教师
+    "teacher_large": "yolo11l-seg.pt",      # 大教师 (l, 不含注意力，更强)
 }
 
 

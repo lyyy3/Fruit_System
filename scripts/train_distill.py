@@ -167,10 +167,10 @@ if __name__ == "__main__":
                         help="教师模型权重路径")
     parser.add_argument("--resume", type=str, default=None,
                         help="从已训练的模型继续蒸馏（权重路径）")
-    parser.add_argument("--alpha", type=float, default=0.3,
-                        help="蒸馏损失权重 (0-1)，默认0.3")
-    parser.add_argument("--temperature", type=float, default=4.0,
-                        help="软标签温度，默认4.0")
+    parser.add_argument("--alpha", type=float, default=0.5,
+                        help="蒸馏损失权重 (0-1)")
+    parser.add_argument("--temperature", type=float, default=3.0,
+                        help="软标签温度")
     parser.add_argument("--epochs", type=int, default=50,
                         help="训练轮数")
     parser.add_argument("--batch", type=int, default=32,
