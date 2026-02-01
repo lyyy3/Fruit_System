@@ -93,8 +93,7 @@ from ultralytics.utils.torch_utils import (
     time_sync,
 )
 
-# 导入增强注意力模块
-from src.modules import ECA, SpatialAttention, ECA_SA, C2PSA_ECA, C3k2_ECA
+# 注意: 增强模块(ECA等)在parse_model中延迟导入，避免循环依赖
 
 class BaseModel(torch.nn.Module):
     """Base class for all YOLO models in the Ultralytics family.
@@ -1484,6 +1483,15 @@ def load_checkpoint(weight, device=None, inplace=True, fuse=False):
     return model, ckpt
 
 
+def _get_custom_modules():
+    """延迟导入自定义增强模块，避免循环依赖"""
+    try:
+        from src.modules import ECA, SpatialAttention, ECA_SA, C2PSA_ECA, C3k2_ECA
+        return [ECA, SpatialAttention, ECA_SA, C2PSA_ECA, C3k2_ECA]
+    except ImportError:
+        return []
+
+
 def parse_model(d, ch, verbose=True):
     """Parse a YOLO model.yaml dictionary into a PyTorch model.
 
@@ -1555,11 +1563,7 @@ def parse_model(d, ch, verbose=True):
             SCDown,
             C2fCIB,
             A2C2f,
-            ECA,
-            SpatialAttention,
-            ECA_SA,
-            C2PSA_ECA,
-            C3k2_ECA,  # 多位置ECA
+            *_get_custom_modules(),  # ECA, SpatialAttention等增强模块
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments

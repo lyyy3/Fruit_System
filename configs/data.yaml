@@ -1,5 +1,5 @@
 # 果实检测数据集 v2 (6类)
-path: ../datasets/fruit_dataset_v2
+path: ../Fruit_System/datasets/fruit_dataset_v2
 train: train/images
 val: valid/images
 test: test/images

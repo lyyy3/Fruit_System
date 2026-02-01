@@ -21,6 +21,7 @@ MODELS = {
     "eca": "models/yolo11n_eca.yaml",       # 学生+ECA
     "teacher": "yolo11m-seg.pt",            # 教师baseline
     "teacher_eca": "models/yolo11m_eca.yaml", # 教师+ECA
+    "teacher_enhanced": "models/yolo11m_enhanced.yaml",  # 增强教师
 }
 
 
@@ -57,7 +58,8 @@ def train(args):
         device=0,
         project=str(exp_dir),
         name="train",
-        workers=2,
+        workers=8,
+        cache=True,  # 缓存数据到内存提升GPU利用率
         exist_ok=True,
         patience=20,  # 100轮训练用更大的patience
         verbose=True,

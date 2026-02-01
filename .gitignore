@@ -38,3 +38,5 @@ train_log.txt
 # 系统文件
 .DS_Store
 Thumbs.db
+
+comparison.csv
