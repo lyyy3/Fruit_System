@@ -349,7 +349,10 @@ class DistillSegmentationTrainer(SegmentationTrainer):
             s_feat = student_feat[:, :C_min, :]
             t_feat = teacher_feat[:, :C_min, :]
             
-            # MSE损失（更稳定）归一化
+            # L2归一化后计算MSE（使损失在合理范围）
+            s_feat = F.normalize(s_feat, p=2, dim=1)
+            t_feat = F.normalize(t_feat, p=2, dim=1)
+            
             loss = F.mse_loss(s_feat, t_feat)
             return loss
             
