@@ -263,6 +263,24 @@ class DistillSegmentationTrainer(SegmentationTrainer):
         # 学生模型预测
         student_preds = self.model(batch["img"]) if not self.args.compile else self.model(batch["img"])
         
+        # 调试：打印类型和形状（只在第一个batch）
+        if not hasattr(self, '_debug_printed'):
+            self._debug_printed = True
+            LOGGER.info(f"[CWD Debug] student_preds type: {type(student_preds)}")
+            LOGGER.info(f"[CWD Debug] teacher_preds type: {type(teacher_preds)}")
+            if isinstance(student_preds, (list, tuple)):
+                for i, p in enumerate(student_preds):
+                    if isinstance(p, torch.Tensor):
+                        LOGGER.info(f"[CWD Debug] student_preds[{i}] shape: {p.shape}")
+            elif isinstance(student_preds, torch.Tensor):
+                LOGGER.info(f"[CWD Debug] student_preds shape: {student_preds.shape}")
+            if isinstance(teacher_preds, (list, tuple)):
+                for i, p in enumerate(teacher_preds):
+                    if isinstance(p, torch.Tensor):
+                        LOGGER.info(f"[CWD Debug] teacher_preds[{i}] shape: {p.shape}")
+            elif isinstance(teacher_preds, torch.Tensor):
+                LOGGER.info(f"[CWD Debug] teacher_preds shape: {teacher_preds.shape}")
+        
         # 计算CWD蒸馏损失
         distill_loss = 0.0
         T = self.temperature  # 温度参数
