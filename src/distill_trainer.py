@@ -349,11 +349,8 @@ class DistillSegmentationTrainer(SegmentationTrainer):
             s_feat = student_feat[:, :C_min, :]
             t_feat = teacher_feat[:, :C_min, :]
             
-            # KL散度软标签蒸馏
-            s_soft = F.log_softmax(s_feat / T, dim=1)
-            t_soft = F.softmax(t_feat / T, dim=1)
-            
-            loss = F.kl_div(s_soft, t_soft, reduction='batchmean') * (T ** 2)
+            # MSE损失（更稳定）归一化
+            loss = F.mse_loss(s_feat, t_feat)
             return loss
             
         elif student_feat.dim() == 4 and teacher_feat.dim() == 4:
