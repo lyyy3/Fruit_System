@@ -1485,10 +1485,24 @@ def load_checkpoint(weight, device=None, inplace=True, fuse=False):
 
 def _get_custom_modules():
     """延迟导入自定义增强模块，避免循环依赖"""
+    import sys
+    from pathlib import Path
+    
+    # 动态查找项目根目录 (ultralytics的父目录)
     try:
+        tasks_file = Path(__file__).resolve()
+        # tasks.py在ultralytics/nn/下，项目根目录是ultralytics的父目录
+        project_root = tasks_file.parent.parent.parent
+        src_path = project_root / "src"
+        
+        if src_path.exists() and str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        
         from src.modules import ECA, SpatialAttention, ECA_SA, C2PSA_ECA, C3k2_ECA
         return [ECA, SpatialAttention, ECA_SA, C2PSA_ECA, C3k2_ECA]
-    except ImportError:
+    except ImportError as e:
+        import warnings
+        warnings.warn(f"无法导入自定义模块: {e}")
         return []
 
 
@@ -1505,6 +1519,11 @@ def parse_model(d, ch, verbose=True):
         save (list): Sorted list of output layers.
     """
     import ast
+    
+    # 构建自定义模块映射表
+    custom_modules = {}
+    for mod in _get_custom_modules():
+        custom_modules[mod.__name__] = mod
 
     # Args
     legacy = True  # backward compatibility for v3/v5/v8/v9 models
@@ -1591,8 +1610,10 @@ def parse_model(d, ch, verbose=True):
             if "nn." in m
             else getattr(__import__("torchvision").ops, m[16:])
             if "torchvision.ops." in m
-            else globals()[m]
+            else custom_modules.get(m, globals().get(m))  # 先查自定义模块，再查globals
         )  # get module
+        if m is None:
+            raise KeyError(f"Module '{args}' not found. Check if custom modules are properly registered.")
         for j, a in enumerate(args):
             if isinstance(a, str):
                 with contextlib.suppress(ValueError):
