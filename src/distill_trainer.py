@@ -252,9 +252,7 @@ class DistillSegmentationTrainer(SegmentationTrainer):
     def _compute_distill_loss(self, batch):
         """计算蒸馏损失
         
-        使用CWD(Channel-wise Knowledge Distillation)方法
-        论文: Channel-wise Knowledge Distillation for Dense Prediction
-        核心思想: 对每个通道的空间分布进行KL散度对齐
+        使用输出层logit蒸馏：对检测输出做MSE损失
         """
         with torch.no_grad():
             # 教师模型预测（不需要梯度）
@@ -266,82 +264,96 @@ class DistillSegmentationTrainer(SegmentationTrainer):
         # 调试：打印类型和形状（只在第一个batch）
         if not hasattr(self, '_debug_printed'):
             self._debug_printed = True
-            LOGGER.info(f"[CWD Debug] student_preds type: {type(student_preds)}")
-            LOGGER.info(f"[CWD Debug] teacher_preds type: {type(teacher_preds)}")
+            LOGGER.info(f"[Distill Debug] student_preds type: {type(student_preds)}, len: {len(student_preds) if isinstance(student_preds, (list, tuple)) else 'N/A'}")
+            LOGGER.info(f"[Distill Debug] teacher_preds type: {type(teacher_preds)}, len: {len(teacher_preds) if isinstance(teacher_preds, (list, tuple)) else 'N/A'}")
             if isinstance(student_preds, (list, tuple)):
                 for i, p in enumerate(student_preds):
                     if isinstance(p, torch.Tensor):
-                        LOGGER.info(f"[CWD Debug] student_preds[{i}] shape: {p.shape}")
-            elif isinstance(student_preds, torch.Tensor):
-                LOGGER.info(f"[CWD Debug] student_preds shape: {student_preds.shape}")
+                        LOGGER.info(f"[Distill Debug] student_preds[{i}] shape: {p.shape}")
+                    else:
+                        LOGGER.info(f"[Distill Debug] student_preds[{i}] type: {type(p)}")
             if isinstance(teacher_preds, (list, tuple)):
                 for i, p in enumerate(teacher_preds):
                     if isinstance(p, torch.Tensor):
-                        LOGGER.info(f"[CWD Debug] teacher_preds[{i}] shape: {p.shape}")
-            elif isinstance(teacher_preds, torch.Tensor):
-                LOGGER.info(f"[CWD Debug] teacher_preds shape: {teacher_preds.shape}")
+                        LOGGER.info(f"[Distill Debug] teacher_preds[{i}] shape: {p.shape}")
+                    else:
+                        LOGGER.info(f"[Distill Debug] teacher_preds[{i}] type: {type(p)}")
         
-        # 计算CWD蒸馏损失
+        # 计算蒸馏损失
         distill_loss = 0.0
-        T = self.temperature  # 温度参数
+        T = self.temperature
         
-        if isinstance(student_preds, (list, tuple)) and isinstance(teacher_preds, (list, tuple)):
-            for s_pred, t_pred in zip(student_preds, teacher_preds):
-                if isinstance(s_pred, torch.Tensor) and isinstance(t_pred, torch.Tensor):
-                    # 使用CWD计算损失
-                    distill_loss += self._cwd_loss(s_pred, t_pred, T)
-        elif isinstance(student_preds, torch.Tensor) and isinstance(teacher_preds, torch.Tensor):
-            distill_loss = self._cwd_loss(student_preds, teacher_preds, T)
+        # 提取有效的tensor输出
+        student_tensors = []
+        teacher_tensors = []
+        
+        if isinstance(student_preds, (list, tuple)):
+            for p in student_preds:
+                if isinstance(p, torch.Tensor):
+                    student_tensors.append(p)
+        elif isinstance(student_preds, torch.Tensor):
+            student_tensors.append(student_preds)
+            
+        if isinstance(teacher_preds, (list, tuple)):
+            for p in teacher_preds:
+                if isinstance(p, torch.Tensor):
+                    teacher_tensors.append(p)
+        elif isinstance(teacher_preds, torch.Tensor):
+            teacher_tensors.append(teacher_preds)
+        
+        # 对每对输出计算蒸馏损失
+        for s_feat, t_feat in zip(student_tensors, teacher_tensors):
+            loss = self._logit_distill_loss(s_feat, t_feat, T)
+            distill_loss += loss
+            
+        # 调试输出
+        if not hasattr(self, '_loss_debug_printed'):
+            self._loss_debug_printed = True
+            LOGGER.info(f"[Distill Debug] Matched pairs: {min(len(student_tensors), len(teacher_tensors))}, distill_loss: {distill_loss}")
         
         return distill_loss
     
-    def _cwd_loss(self, student_feat, teacher_feat, T=4.0):
-        """Channel-wise Knowledge Distillation Loss
+    def _logit_distill_loss(self, student_feat, teacher_feat, T=3.0):
+        """Logit蒸馏损失
         
-        对每个通道计算空间分布的KL散度
-        
-        Args:
-            student_feat: 学生特征 [B, C_s, H, W]
-            teacher_feat: 教师特征 [B, C_t, H, W]
-            T: 温度参数
+        对输出做KL散度软标签蒸馏
         """
-        B = student_feat.shape[0]
-        
-        # 如果通道数不同，需要对齐
-        if student_feat.shape[1] != teacher_feat.shape[1]:
-            # 使用自适应平均池化对齐空间维度，然后用全局池化
-            s_feat = F.adaptive_avg_pool2d(student_feat, 1).view(B, -1)
-            t_feat = F.adaptive_avg_pool2d(teacher_feat, 1).view(B, -1)
-            # 对齐到相同维度
-            min_c = min(s_feat.shape[1], t_feat.shape[1])
-            s_feat = s_feat[:, :min_c]
-            t_feat = t_feat[:, :min_c]
+        # 如果维度不同，进行对齐
+        if student_feat.dim() == 3 and teacher_feat.dim() == 3:
+            # [B, C, N] 格式 - 检测头输出
+            B, C_s, N = student_feat.shape
+            _, C_t, _ = teacher_feat.shape
             
-            # 计算KL散度
-            s_dist = F.log_softmax(s_feat / T, dim=1)
-            t_dist = F.softmax(t_feat / T, dim=1)
-            return F.kl_div(s_dist, t_dist, reduction='batchmean') * (T ** 2)
+            # 取共同的通道数（只对共享部分蒸馏）
+            C_min = min(C_s, C_t)
+            s_feat = student_feat[:, :C_min, :]
+            t_feat = teacher_feat[:, :C_min, :]
+            
+            # KL散度软标签蒸馏
+            s_soft = F.log_softmax(s_feat / T, dim=1)
+            t_soft = F.softmax(t_feat / T, dim=1)
+            
+            loss = F.kl_div(s_soft, t_soft, reduction='batchmean') * (T ** 2)
+            return loss
+            
+        elif student_feat.dim() == 4 and teacher_feat.dim() == 4:
+            # [B, C, H, W] 格式 - 特征图
+            B, C_s, H_s, W_s = student_feat.shape
+            _, C_t, H_t, W_t = teacher_feat.shape
+            
+            # 空间尺寸对齐
+            if H_s != H_t or W_s != W_t:
+                teacher_feat = F.interpolate(teacher_feat, size=(H_s, W_s), mode='bilinear', align_corners=False)
+            
+            # 通道数对齐
+            C_min = min(C_s, C_t)
+            s_feat = student_feat[:, :C_min, :, :]
+            t_feat = teacher_feat[:, :C_min, :, :]
+            
+            # MSE损失
+            loss = F.mse_loss(s_feat, t_feat)
+            return loss
         
-        # 空间维度对齐
-        if student_feat.shape[-2:] != teacher_feat.shape[-2:]:
-            teacher_feat = F.interpolate(
-                teacher_feat, 
-                size=student_feat.shape[-2:], 
-                mode='bilinear', 
-                align_corners=False
-            )
-        
-        C = student_feat.shape[1]
-        
-        # 展平空间维度: [B, C, H*W]
-        s_flat = student_feat.view(B, C, -1)
-        t_flat = teacher_feat.view(B, C, -1)
-        
-        # 对每个通道计算空间分布的softmax
-        s_dist = F.log_softmax(s_flat / T, dim=2)
-        t_dist = F.softmax(t_flat / T, dim=2)
-        
-        # 计算KL散度
-        loss = F.kl_div(s_dist, t_dist, reduction='batchmean') * (T ** 2)
-        
-        return loss
+        else:
+            # 尺寸不兼容，跳过
+            return 0.0
